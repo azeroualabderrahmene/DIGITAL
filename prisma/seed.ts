@@ -81,7 +81,7 @@ async function main() {
   console.log("Seeding default users...");
   // Dummy password hashes (e.g. for testing)
   // Actual auth will hash using bcrypt/argon2 in Phase 2
-  const adminPasswordHash = "$2b$12$DUMMYHASH123456789012345678901234567890123456789"; 
+  const adminPasswordHash = "$2b$12$DUMMYHASH123456789012345678901234567890123456789";
   const memberPasswordHash = "$2b$12$DUMMYHASH123456789012345678901234567890123456789";
 
   const admin = await prisma.user.create({
