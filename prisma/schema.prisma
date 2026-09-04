@@ -1,0 +1,426 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// User-related roles and statuses
+enum Role {
+  MEMBER
+  AFFILIATE
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id              String      @id @default(uuid())
+  email           String      @unique
+  passwordHash    String
+  name            String?
+  role            Role        @default(MEMBER)
+  status          UserStatus  @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  profile          Profile?
+  memberships      Membership[]
+  orders           Order[]
+  payments         Payment[]            @relation("UserPayments")
+  reviewedPayments Payment[]            @relation("AdminReviewedPayments")
+  affiliate        Affiliate?
+  favorites        Favorite[]
+  accessLogs       AccessLog[]
+  auditLogs        AuditLog[]
+}
+
+model Profile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  avatarUrl String?
+  phone     String?
+  country   String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  parentId    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryHierarchy")
+  products Product[]
+}
+
+// Product-related enums and models
+enum LicenseType {
+  PLR
+  MRR
+  RESELL
+  LICENSED
+  OTHER
+}
+
+enum ResourceType {
+  EBOOK
+  TEMPLATE
+  COURSE
+  GRAPHIC
+  PROMPT_PACK
+  OTHER
+}
+
+enum AccessLevel {
+  BASIC
+  PRO
+  LIFETIME
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Product {
+  id           String        @id @default(uuid())
+  title        String
+  slug         String        @unique
+  description  String
+  categoryId   String
+  thumbnailUrl String?
+  previewUrl   String?
+  resourceUrl  String
+  licenseType  LicenseType
+  resourceType ResourceType
+  accessLevel  AccessLevel
+  status       ProductStatus @default(DRAFT)
+  featured     Boolean       @default(false)
+  viewCount    Int           @default(0)
+  accessCount  Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  favorites  Favorite[]
+  accessLogs AccessLog[]
+
+  @@index([slug])
+  @@index([categoryId, status])
+  @@index([accessLevel])
+  @@index([featured])
+}
+
+// Membership enums and models
+enum DurationType {
+  DAYS
+  MONTHS
+  LIFETIME
+}
+
+enum MembershipStatus {
+  ACTIVE
+  PENDING
+  EXPIRED
+  CANCELLED
+  SUSPENDED
+}
+
+model MembershipPlan {
+  id           String       @id @default(uuid())
+  name         String
+  slug         String       @unique
+  price        Float
+  currency     String       @default("DZD")
+  duration     Int
+  durationType DurationType
+  accessLevel  AccessLevel
+  description  String?
+  features     Json?
+  active       Boolean      @default(true)
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  memberships Membership[]
+  orderItems  OrderItem[]
+}
+
+model Membership {
+  id        String           @id @default(uuid())
+  userId    String
+  planId    String
+  status    MembershipStatus @default(PENDING)
+  startedAt DateTime         @default(now())
+  expiresAt DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan MembershipPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+}
+
+// Order and Payment enums and models
+enum OrderStatus {
+  PENDING
+  PAID
+  REJECTED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  BARIDIMOB
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Order {
+  id            String        @id @default(uuid())
+  userId        String
+  totalAmount   Float
+  currency      String        @default("DZD")
+  status        OrderStatus   @default(PENDING)
+  paymentMethod PaymentMethod @default(BARIDIMOB)
+  referenceCode String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items      OrderItem[]
+  payments   Payment[]
+  commission Commission?
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  planId    String
+  unitPrice Float
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  plan  MembershipPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String
+  userId            String
+  method            PaymentMethod @default(BARIDIMOB)
+  referenceNote     String?
+  receiptStorageKey String
+  receiptFileType   String
+  receiptFileSize   Int
+  status            PaymentStatus @default(PENDING)
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+  adminNotes        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user            User      @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedByAdmin User?     @relation("AdminReviewedPayments", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+}
+
+// Affiliate-related enums and models
+enum AffiliateStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model Affiliate {
+  id           String          @id @default(uuid())
+  userId       String          @unique
+  referralCode String          @unique
+  status       AffiliateStatus @default(ACTIVE)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referrals   Referral[]
+  commissions Commission[]
+  withdrawals Withdrawal[]
+}
+
+model Referral {
+  id             String    @id @default(uuid())
+  affiliateId    String
+  referredUserId String?
+  ipHash         String?
+  userAgentHash  String?
+  clickedAt      DateTime  @default(now())
+  registeredAt   DateTime?
+  convertedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  affiliate   Affiliate    @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  commissions Commission[]
+}
+
+enum CommissionType {
+  FIXED
+  PERCENTAGE
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+model Commission {
+  id          String           @id @default(uuid())
+  affiliateId String
+  referralId  String
+  orderId     String           @unique
+  amount      Float
+  type        CommissionType   @default(PERCENTAGE)
+  status      CommissionStatus @default(PENDING)
+  eligibleAt  DateTime
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  affiliate Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  referral  Referral  @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+model Withdrawal {
+  id            String           @id @default(uuid())
+  affiliateId   String
+  amount        Float
+  paymentMethod String
+  destination   String
+  notes         String?
+  status        WithdrawalStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  affiliate Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model AccessLog {
+  id            String   @id @default(uuid())
+  userId        String
+  productId     String
+  accessedAt    DateTime @default(now())
+  ipHash        String?
+  userAgentHash String?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([productId])
+  @@index([accessedAt])
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+model Coupon {
+  id              String       @id @default(uuid())
+  code            String       @unique
+  discountType    DiscountType
+  value           Float
+  appliesToPlanId String?
+  maxUses         Int?
+  usedCount       Int          @default(0)
+  expiresAt       DateTime?
+  active          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+enum Audience {
+  ALL
+  MEMBERS
+  AFFILIATES
+}
+
+model Announcement {
+  id        String    @id @default(uuid())
+  title     String
+  body      String
+  isActive  Boolean   @default(true)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  audience  Audience  @default(ALL)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
+model Settings {
+  key       String   @id @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
